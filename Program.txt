@@ -1,0 +1,78 @@
+#include <SoftwareSerial.h>
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+#include <LiquidCrystal.h>
+
+#define SSID "your_wifi_ssid"
+#define PASSWORD "your_wifi_password"
+#define BROKER_ADDRESS "your_aws_iot_endpoint"
+#define CLIENT_ID "your_client_id"
+#define TOPIC "your_topic"
+
+#define LCD_RS 12
+#define LCD_EN 11
+#define LCD_D4 5
+#define LCD_D5 4
+#define LCD_D6 3
+#define LCD_D7 2
+
+#define THROTTLE_PIN A0
+#define MIN_THROTTLE 1000
+#define MAX_THROTTLE 2000
+
+LiquidCrystal lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+SoftwareSerial espSerial(6, 7);
+WiFiClient wifiClient;
+PubSubClient mqttClient(wifiClient);
+
+void setup() {
+  // Initialize LCD
+  lcd.begin(16, 2);
+
+  // Initialize Wi-Fi module
+  WiFi.begin(SSID, PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+
+  // Initialize MQTT client
+  mqttClient.setServer(BROKER_ADDRESS, 8883);
+
+  // Initialize ESP8266 module
+  espSerial.begin(9600);
+  espSerial.println("AT+CWMODE=1");
+  delay(1000);
+  espSerial.println("AT+CIPMUX=0");
+  delay(1000);
+  espSerial.println("AT+CIFSR");
+  delay(1000);
+}
+
+void loop() {
+  // Read throttle input and calculate speed in km/h
+  int throttle_value = analogRead(THROTTLE_PIN);
+  float speed_kmph = map(throttle_value, 0, 1023, 0, 30);
+
+  // Display speed on LCD
+  lcd.setCursor(0, 0);
+  lcd.print("Speed: ");
+  lcd.print(speed_kmph, 1);
+  lcd.print(" km/h");
+
+  // Publish speed to AWS IoT endpoint
+  if (mqttClient.connected()) {
+    char payload[32];
+    sprintf(payload, "%.1f", speed_kmph);
+    mqttClient.publish(TOPIC, payload);
+  } else {
+    if (mqttClient.connect(CLIENT_ID)) {
+      Serial.println("MQTT connected");
+    }
+  }
+
+  // Wait for a short period before sending the next update
+  delay(100);
+}
